@@ -35,10 +35,10 @@ func New(context context.Context, id string, room string) *Aranet {
 	}
 }
 
-func (a *Aranet) RunUpdateLoop(verbose bool) {
-	ticker := time.NewTicker(10 * time.Second)
+func (a *Aranet) RunUpdateLoop(verbose bool, interval time.Duration) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	log.Printf("Monitoring aranet %s as room=%s", a.id, a.room)
+	log.Printf("Monitoring aranet %s as room=%s (update interval: %v)", a.id, a.room, interval)
 
 	data := a.retriever.Read()
 

@@ -21,6 +21,7 @@ import (
 
 	hapLog "github.com/brutella/hap/log"
 	"github.com/ryansouza/aranet4-exporter/aranet"
+	"github.com/sirupsen/logrus"
 )
 
 const incorrectArgumentExitCode = 2
@@ -64,12 +65,16 @@ var homekit bool
 var listen string
 var verbose bool
 var stateDir string
+var updateInterval time.Duration
+var enableDefaultMetrics bool
 
 func init() {
 	flag.BoolVar(&verbose, "verbose", false, "verbose logging")
 	flag.StringVar(&listen, "listen", ":9963", "address to expose Prometheus metrics on")
 	flag.BoolVar(&homekit, "homekit", false, "enable HomeKit support")
 	flag.StringVar(&stateDir, "state", getDefaultStateDir(), "directory to store persistent state")
+	flag.DurationVar(&updateInterval, "interval", 10*time.Second, "update interval for polling Aranet4 devices")
+	flag.BoolVar(&enableDefaultMetrics, "default-metrics", false, "enable default Prometheus process and Go metrics collectors")
 	flag.Func("device", "monitor an Aranet4 with format {ID} or {ID}={name}. may be specified multiple "+
 		"times. examples: -device D8:9B:67:AA:BB:CC=bedroom -device D8:9B:67:AA:BB:DD", parseAranet)
 
@@ -150,6 +155,12 @@ func serveHomekitServer(shutdownContext context.Context, shutdownWait *sync.Wait
 }
 
 func main() {
+	logrus.SetLevel(logrus.ErrorLevel)
+	logrus.SetFormatter(&logrus.TextFormatter{
+		DisableColors: true,
+		FullTimestamp: true,
+	})
+
 	shutdownContext, shutdown := context.WithCancel(context.Background())
 	shutdownWait := sync.WaitGroup{}
 
@@ -175,7 +186,7 @@ func main() {
 		go func() {
 			defer shutdownWait.Done()
 
-			a.RunUpdateLoop(verbose)
+			a.RunUpdateLoop(verbose, updateInterval)
 		}()
 
 		collectedAranets = append(collectedAranets, a)
@@ -202,10 +213,12 @@ func main() {
 	}()
 
 	reg := prometheus.NewPedanticRegistry()
-	reg.MustRegister(
-		prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}),
-		prometheus.NewGoCollector(),
-	)
+	if enableDefaultMetrics {
+		reg.MustRegister(
+			prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}),
+			prometheus.NewGoCollector(),
+		)
+	}
 	reg.MustRegister(aranetCollector)
 
 	serveMetricsHTTP(shutdownContext, &shutdownWait, reg)
